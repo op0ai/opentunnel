@@ -183,6 +183,12 @@ impl Client {
         )
     }
 
+    /// Starts a tunnel from a caller-owned identity without reading or writing
+    /// a profile or private-key file.
+    pub fn connect_identity(&self, identity: Identity, routes: Routes) -> Result<Tunnel> {
+        Tunnel::start(self.api.clone(), identity, routes, None)
+    }
+
     async fn provision(
         &self,
         profile: &str,

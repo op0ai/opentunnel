@@ -171,6 +171,29 @@ fn rand_suffix() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
+#[tokio::test]
+async fn connects_with_a_caller_owned_identity_without_profile_io() {
+    let (base, mut sessions, _) = fake_relay(attached).await;
+    let root = std::env::temp_dir().join(format!(
+        "opentunnel-memory-test-{}-{}",
+        std::process::id(),
+        rand_suffix()
+    ));
+    let storage = Storage::at(root.clone());
+    let client = Client::new(ClientOptions {
+        api: Some(base.parse().unwrap()),
+        storage: Some(storage),
+    });
+    let tunnel = client
+        .connect_identity(identity(), [("api".into(), "127.0.0.1:9".into())].into())
+        .unwrap();
+    let (bridge, routes) = sessions.recv().await.unwrap();
+    assert_eq!(routes, vec!["api".to_string()]);
+    drop(bridge);
+    tunnel.close().await.unwrap();
+    assert!(!root.exists(), "the identity path must stay unused");
+}
+
 async fn send_open(bridge: &mut Bridge, conn: u32, sni: &str) {
     let open = ServerMessage::Open {
         conn,
