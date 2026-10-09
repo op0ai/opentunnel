@@ -1,6 +1,7 @@
 use std::io;
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("{tag}: {message} (HTTP {status})")]
     Api {
@@ -32,6 +33,12 @@ pub enum Error {
     Invalid(String),
     #[error("crypto error: {0}")]
     Crypto(String),
+    #[error("tunnel operation deadline expired")]
+    DeadlineExceeded,
+    #[error("tunnel background task failed: {0}")]
+    Task(#[from] tokio::task::JoinError),
+    #[error("tunnel status channel closed: {0}")]
+    Status(#[from] tokio::sync::watch::error::RecvError),
 }
 
 impl Error {

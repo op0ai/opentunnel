@@ -4,7 +4,7 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use opentunnel::protocol::bridge::{decode_data_frame, encode_data_frame};
 use opentunnel::protocol::{ClientMessage, ServerMessage};
-use opentunnel::{Client, ClientOptions, Event, Identity, Routes, Storage, Tunnel};
+use opentunnel::{Client, ClientOptions, Error, Event, Identity, Routes, Storage, Tunnel};
 use rcgen::{CertificateParams, KeyPair};
 use rustls_pki_types::pem::PemObject;
 use rustls_pki_types::{CertificateDer, ServerName};
@@ -192,6 +192,20 @@ async fn connects_with_a_caller_owned_identity_without_profile_io() {
     drop(bridge);
     tunnel.close().await.unwrap();
     assert!(!root.exists(), "the identity path must stay unused");
+}
+
+#[tokio::test]
+async fn identity_connect_returns_when_its_absolute_deadline_is_expired() {
+    let client = Client::new(ClientOptions::default());
+    let deadline = tokio::time::Instant::now();
+    let result = client
+        .connect_identity_until(
+            identity(),
+            [("api".into(), "127.0.0.1:9".into())].into(),
+            deadline,
+        )
+        .await;
+    assert!(matches!(result, Err(Error::DeadlineExceeded)));
 }
 
 async fn send_open(bridge: &mut Bridge, conn: u32, sni: &str) {

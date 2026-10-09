@@ -189,6 +189,23 @@ impl Client {
         Tunnel::start(self.api.clone(), identity, routes, None)
     }
 
+    /// Starts a tunnel from a caller-owned identity and waits for an attached
+    /// bridge until the supplied absolute deadline.
+    pub async fn connect_identity_until(
+        &self,
+        identity: Identity,
+        routes: Routes,
+        deadline: tokio::time::Instant,
+    ) -> Result<Tunnel> {
+        let mut tunnel = self.connect_identity(identity, routes)?;
+        let result = tunnel.wait_connected_until(deadline).await;
+        if let Err(error) = result {
+            tunnel.abort();
+            return Err(error);
+        }
+        Ok(tunnel)
+    }
+
     async fn provision(
         &self,
         profile: &str,

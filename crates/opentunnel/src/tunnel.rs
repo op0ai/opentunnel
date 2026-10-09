@@ -44,6 +44,8 @@ const STALLED_CHANNEL_TIMEOUT: Duration = Duration::from_secs(30);
 const CERTIFICATE_CHECK_FRESH: Duration = Duration::from_secs(12 * 60 * 60);
 const CERTIFICATE_CHECK_DUE: Duration = Duration::from_secs(60);
 const RENEWAL_WINDOW: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+const API_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+const CHANNEL_OPEN_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
@@ -111,6 +113,7 @@ pub struct Tunnel {
     events: broadcast::Sender<Event>,
     status: watch::Receiver<Status>,
     task: Option<JoinHandle<Result<()>>>,
+    refresh_task: Option<JoinHandle<()>>,
 }
 
 impl Tunnel {
@@ -138,7 +141,7 @@ impl Tunnel {
             last_error: None,
             connected_at: None,
         });
-        tokio::spawn(refresh_certificate(
+        let refresh_task = tokio::spawn(refresh_certificate(
             api.clone(),
             identity.clone(),
             acceptor.clone(),
@@ -161,6 +164,7 @@ impl Tunnel {
             events,
             status: status_rx,
             task: Some(tokio::spawn(supervisor.run())),
+            refresh_task: Some(refresh_task),
         })
     }
 
@@ -188,10 +192,9 @@ impl Tunnel {
 
     /// Waits until the tunnel stops on its own after a fatal error.
     pub async fn wait(&mut self) -> Result<()> {
+        self.stop_refresh_task();
         match self.task.take() {
-            Some(task) => task
-                .await
-                .map_err(|error| Error::Bridge(error.to_string()))?,
+            Some(task) => task.await.map_err(Error::Task)?,
             None => Ok(()),
         }
     }
@@ -200,11 +203,70 @@ impl Tunnel {
         self.shutdown.send_replace(true);
         self.wait().await
     }
+
+    /// Stops the tunnel and waits for its session task until `deadline`.
+    pub async fn close_until(mut self, deadline: tokio::time::Instant) -> Result<()> {
+        self.shutdown.send_replace(true);
+        self.stop_refresh_task();
+        let Some(mut task) = self.task.take() else {
+            return Ok(());
+        };
+        if tokio::time::Instant::now() >= deadline {
+            task.abort();
+            return Err(Error::DeadlineExceeded);
+        }
+        match tokio::time::timeout_at(deadline, &mut task).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(error)) => Err(Error::Task(error)),
+            Err(_) => {
+                task.abort();
+                Err(Error::DeadlineExceeded)
+            }
+        }
+    }
+
+    pub(crate) async fn wait_connected_until(&self, deadline: tokio::time::Instant) -> Result<()> {
+        let mut status = self.status.clone();
+        loop {
+            if tokio::time::Instant::now() >= deadline {
+                return Err(Error::DeadlineExceeded);
+            }
+            let current = status.borrow_and_update().clone();
+            if current.state == State::Connected {
+                return Ok(());
+            }
+            if current.state == State::Stopped {
+                return Err(Error::Bridge(
+                    current
+                        .last_error
+                        .unwrap_or_else(|| "tunnel stopped before attaching".into()),
+                ));
+            }
+            tokio::time::timeout_at(deadline, status.changed())
+                .await
+                .map_err(|_| Error::DeadlineExceeded)??;
+        }
+    }
+
+    pub(crate) fn abort(&mut self) {
+        self.shutdown.send_replace(true);
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
+        self.stop_refresh_task();
+    }
+
+    fn stop_refresh_task(&mut self) {
+        if let Some(task) = self.refresh_task.take() {
+            task.abort();
+        }
+    }
 }
 
 impl Drop for Tunnel {
     fn drop(&mut self) {
         self.shutdown.send_replace(true);
+        self.stop_refresh_task();
     }
 }
 
@@ -276,7 +338,13 @@ async fn refresh_certificate(
                 _ = shutdown.changed() => return,
             }
         }
-        let Ok(info) = api.certificate(&identity.token, &identity.id).await else {
+        let request_deadline = tokio::time::Instant::now() + API_REQUEST_TIMEOUT;
+        let Ok(Ok(info)) = tokio::time::timeout_at(
+            request_deadline,
+            api.certificate(&identity.token, &identity.id),
+        )
+        .await
+        else {
             continue;
         };
         let CertificateState::Ready {
@@ -746,9 +814,14 @@ async fn run_channel(
     };
 
     let serve = async move {
-        let mut tls = acceptor.accept(tls_side).await.map_err(ChannelError::Io)?;
-        let mut upstream = TcpStream::connect(&target)
+        let deadline = tokio::time::Instant::now() + CHANNEL_OPEN_TIMEOUT;
+        let mut tls = tokio::time::timeout_at(deadline, acceptor.accept(tls_side))
             .await
+            .map_err(|_| ChannelError::Deadline)?
+            .map_err(ChannelError::Io)?;
+        let mut upstream = tokio::time::timeout_at(deadline, TcpStream::connect(&target))
+            .await
+            .map_err(|_| ChannelError::Deadline)?
             .map_err(ChannelError::Connect)?;
         upstream.set_nodelay(true).ok();
         tokio::io::copy_bidirectional(&mut tls, &mut upstream)
@@ -764,7 +837,7 @@ async fn run_channel(
         Err(error) => {
             let code = match error {
                 ChannelError::Connect(_) => codes::UPSTREAM_CONNECT_FAILED,
-                ChannelError::Io(_) => codes::UPSTREAM_IO_ERROR,
+                ChannelError::Io(_) | ChannelError::Deadline => codes::UPSTREAM_IO_ERROR,
             };
             let _ = outbound
                 .send(control(&ClientMessage::Reset {
@@ -779,6 +852,8 @@ async fn run_channel(
 
 #[derive(Debug, thiserror::Error)]
 enum ChannelError {
+    #[error("channel open deadline expired")]
+    Deadline,
     #[error("upstream connect failed: {0}")]
     Connect(std::io::Error),
     #[error("{0}")]
