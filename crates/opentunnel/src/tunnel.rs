@@ -69,6 +69,10 @@ pub enum Event {
         route: String,
         peer: String,
     },
+    TlsNegotiated {
+        conn: ConnId,
+        group: Option<String>,
+    },
     ConnectionClosed {
         conn: ConnId,
         route: String,
@@ -656,6 +660,7 @@ impl Supervisor {
                                         acceptor,
                                         inbound_rx,
                                         outbound.clone(),
+                                        self.events.clone(),
                                     ));
                                     channels.insert(conn, Channel { route: route.clone(), inbound, abort });
                                     self.status.send_modify(|status| status.connections = channels.len());
@@ -826,6 +831,7 @@ async fn run_channel(
     acceptor: TlsAcceptor,
     mut inbound: mpsc::Receiver<Inbound>,
     outbound: mpsc::Sender<Message>,
+    events: broadcast::Sender<Event>,
 ) -> (ConnId, Option<String>) {
     let (local, tls_side) = tokio::io::duplex(DUPLEX_BUFFER);
     let (mut local_read, mut local_write) = tokio::io::split(local);
@@ -870,6 +876,12 @@ async fn run_channel(
             .await
             .map_err(|_| ChannelError::Deadline)?
             .map_err(ChannelError::Io)?;
+        let group = tls
+            .get_ref()
+            .1
+            .negotiated_key_exchange_group()
+            .map(|group| format!("{:?}", group.name()));
+        let _ = events.send(Event::TlsNegotiated { conn, group });
         let mut upstream = tokio::time::timeout_at(deadline, TcpStream::connect(&target))
             .await
             .map_err(|_| ChannelError::Deadline)?

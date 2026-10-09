@@ -4,7 +4,9 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use opentunnel::protocol::bridge::{decode_data_frame, encode_data_frame};
 use opentunnel::protocol::{ClientMessage, ServerMessage};
-use opentunnel::{Client, ClientOptions, Error, Event, Identity, Routes, Storage, Tunnel};
+use opentunnel::{
+    Client, ClientOptions, Error, Event, Identity, KeyExchangeGroup, Routes, Storage, Tunnel,
+};
 use rcgen::{CertificateParams, KeyPair};
 use rustls_pki_types::pem::PemObject;
 use rustls_pki_types::{CertificateDer, ServerName};
@@ -152,6 +154,15 @@ fn attached() -> ServerMessage {
 
 /// Saves `identity` to a fresh storage directory and connects it.
 fn connect(base: &str, identity: &Identity, routes: Routes) -> (Tunnel, Storage) {
+    connect_with_groups(base, identity, routes, None)
+}
+
+fn connect_with_groups(
+    base: &str,
+    identity: &Identity,
+    routes: Routes,
+    key_exchange_groups: Option<Vec<KeyExchangeGroup>>,
+) -> (Tunnel, Storage) {
     let storage = Storage::at(std::env::temp_dir().join(format!(
         "opentunnel-test-{}-{}",
         std::process::id(),
@@ -161,9 +172,24 @@ fn connect(base: &str, identity: &Identity, routes: Routes) -> (Tunnel, Storage)
     let client = Client::new(ClientOptions {
         api: Some(base.parse().unwrap()),
         storage: Some(storage.clone()),
-        key_exchange_groups: None,
+        key_exchange_groups,
     });
     (client.connect("default", routes).unwrap(), storage)
+}
+
+fn hybrid_connector(identity: &Identity) -> tokio_rustls::TlsConnector {
+    let mut roots = rustls::RootCertStore::empty();
+    roots
+        .add(CertificateDer::from_pem_slice(identity.certificate.as_bytes()).unwrap())
+        .unwrap();
+    let mut provider = rustls::crypto::aws_lc_rs::default_provider();
+    provider.kx_groups = vec![rustls::crypto::aws_lc_rs::kx_group::X25519MLKEM768];
+    let config = rustls::ClientConfig::builder_with_provider(Arc::new(provider))
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    tokio_rustls::TlsConnector::from(Arc::new(config))
 }
 
 fn rand_suffix() -> u64 {
@@ -208,6 +234,47 @@ async fn identity_connect_returns_when_its_absolute_deadline_is_expired() {
         )
         .await;
     assert!(matches!(result, Err(Error::DeadlineExceeded)));
+}
+
+#[tokio::test]
+async fn reports_the_negotiated_hybrid_key_exchange_group() {
+    let target = echo_server().await;
+    let (base, mut sessions, _) = fake_relay(attached).await;
+    let identity = identity();
+    let (tunnel, _) = connect_with_groups(
+        &base,
+        &identity,
+        [("api".into(), target)].into(),
+        Some(vec![KeyExchangeGroup::X25519MLKEM768]),
+    );
+    let mut events = tunnel.subscribe();
+    let (mut bridge, _) = sessions.recv().await.unwrap();
+    let (public, relay_side) = tokio::io::duplex(64 * 1024);
+    send_open(&mut bridge, 77, &format!("api.{HOSTNAME}")).await;
+    let pumping = tokio::spawn(pump(bridge, 77, relay_side));
+
+    let name = ServerName::try_from(format!("api.{HOSTNAME}")).unwrap();
+    let mut tls = hybrid_connector(&identity)
+        .connect(name, public)
+        .await
+        .unwrap();
+    let negotiated = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Event::TlsNegotiated { conn: 77, group } = events.recv().await.unwrap() {
+                break group;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(negotiated.as_deref(), Some("X25519MLKEM768"));
+
+    tls.shutdown().await.unwrap();
+    let _ = tokio::time::timeout(Duration::from_secs(5), pumping)
+        .await
+        .unwrap()
+        .unwrap();
+    tunnel.close().await.unwrap();
 }
 
 async fn send_open(bridge: &mut Bridge, conn: u32, sni: &str) {
