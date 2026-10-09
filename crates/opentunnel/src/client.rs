@@ -30,6 +30,9 @@ pub struct ClientOptions {
     pub api: Option<Url>,
     /// Identity storage. Defaults to the XDG data directory.
     pub storage: Option<Storage>,
+    /// TLS key-exchange groups in preference order. The default prefers the
+    /// X25519/ML-KEM hybrid group and then uses classical fallback groups.
+    pub key_exchange_groups: Option<Vec<crate::KeyExchangeGroup>>,
 }
 
 /// Creates, stores, and connects tunnels. Each profile owns one tunnel.
@@ -37,6 +40,7 @@ pub struct ClientOptions {
 pub struct Client {
     api: Api,
     storage: Storage,
+    key_exchange_groups: Vec<crate::KeyExchangeGroup>,
 }
 
 impl Default for Client {
@@ -50,9 +54,13 @@ impl Client {
         let api = options.api.unwrap_or_else(|| {
             Url::parse(crate::protocol::api::DEFAULT_API).expect("default API URL is valid")
         });
+        let key_exchange_groups = options
+            .key_exchange_groups
+            .unwrap_or_else(default_key_exchange_groups);
         Self {
             api: Api::new(api),
             storage: options.storage.unwrap_or_default(),
+            key_exchange_groups,
         }
     }
 
@@ -180,13 +188,20 @@ impl Client {
             identity,
             routes,
             Some((self.storage.clone(), profile.to_owned())),
+            self.key_exchange_groups.clone(),
         )
     }
 
     /// Starts a tunnel from a caller-owned identity without reading or writing
     /// a profile or private-key file.
     pub fn connect_identity(&self, identity: Identity, routes: Routes) -> Result<Tunnel> {
-        Tunnel::start(self.api.clone(), identity, routes, None)
+        Tunnel::start(
+            self.api.clone(),
+            identity,
+            routes,
+            None,
+            self.key_exchange_groups.clone(),
+        )
     }
 
     /// Starts a tunnel from a caller-owned identity and waits for an attached
@@ -276,4 +291,15 @@ impl Client {
         progress(ProvisionStage::Ready);
         Ok(identity)
     }
+}
+
+fn default_key_exchange_groups() -> Vec<crate::KeyExchangeGroup> {
+    use rustls::NamedGroup;
+
+    vec![
+        NamedGroup::X25519MLKEM768,
+        NamedGroup::X25519,
+        NamedGroup::secp256r1,
+        NamedGroup::secp384r1,
+    ]
 }

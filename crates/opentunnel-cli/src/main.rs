@@ -112,6 +112,7 @@ async fn run(cli: Cli) -> Result<()> {
             .map(|api| api.parse().context("invalid --api URL"))
             .transpose()?,
         storage: None,
+        key_exchange_groups: None,
     });
     let profile = cli.profile.as_str();
 

@@ -124,11 +124,12 @@ impl Tunnel {
         identity: Identity,
         routes: Routes,
         storage: Option<(Storage, String)>,
+        key_exchange_groups: Vec<crate::KeyExchangeGroup>,
     ) -> Result<Self> {
         for (name, target) in &routes {
             validate_route(name, target)?;
         }
-        let acceptor = Arc::new(RwLock::new(acceptor(&identity)?));
+        let acceptor = Arc::new(RwLock::new(acceptor(&identity, &key_exchange_groups)?));
         let (routes_tx, routes_rx) = watch::channel(routes.clone());
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let (events, _) = broadcast::channel(1024);
@@ -148,6 +149,7 @@ impl Tunnel {
             storage,
             shutdown_rx.clone(),
             events.clone(),
+            key_exchange_groups.clone(),
         ));
         let supervisor = Supervisor {
             api,
@@ -282,7 +284,10 @@ fn validate_route(name: &str, target: &str) -> Result<()> {
     Ok(())
 }
 
-fn acceptor(identity: &Identity) -> Result<TlsAcceptor> {
+fn acceptor(
+    identity: &Identity,
+    key_exchange_groups: &[crate::KeyExchangeGroup],
+) -> Result<TlsAcceptor> {
     let crypto = |error: &dyn std::fmt::Display| Error::Crypto(error.to_string());
     let chain = format!("{}\n{}", identity.certificate, identity.chain);
     let certificates = CertificateDer::pem_slice_iter(chain.as_bytes())
@@ -290,15 +295,41 @@ fn acceptor(identity: &Identity) -> Result<TlsAcceptor> {
         .map_err(|error| crypto(&error))?;
     let key = PrivateKeyDer::from_pem_slice(identity.private_key.as_bytes())
         .map_err(|error| crypto(&error))?;
-    let config = rustls::ServerConfig::builder_with_provider(Arc::new(
-        rustls::crypto::ring::default_provider(),
-    ))
-    .with_safe_default_protocol_versions()
-    .map_err(|error| crypto(&error))?
-    .with_no_client_auth()
-    .with_single_cert(certificates, key)
-    .map_err(|error| crypto(&error))?;
+    let provider = crypto_provider(key_exchange_groups)?;
+    let config = rustls::ServerConfig::builder_with_provider(Arc::new(provider))
+        .with_safe_default_protocol_versions()
+        .map_err(|error| crypto(&error))?
+        .with_no_client_auth()
+        .with_single_cert(certificates, key)
+        .map_err(|error| crypto(&error))?;
     Ok(TlsAcceptor::from(Arc::new(config)))
+}
+
+fn crypto_provider(
+    key_exchange_groups: &[crate::KeyExchangeGroup],
+) -> Result<rustls::crypto::CryptoProvider> {
+    if key_exchange_groups.is_empty() {
+        return Err(Error::Invalid(
+            "TLS key-exchange group list must not be empty".into(),
+        ));
+    }
+    let mut provider = rustls::crypto::aws_lc_rs::default_provider();
+    provider.kx_groups = key_exchange_groups
+        .iter()
+        .map(|requested| {
+            provider
+                .kx_groups
+                .iter()
+                .find(|supported| supported.name() == *requested)
+                .copied()
+                .ok_or_else(|| {
+                    Error::Invalid(format!(
+                        "TLS key-exchange group {requested:?} is not supported"
+                    ))
+                })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(provider)
 }
 
 fn now_ms() -> u64 {
@@ -324,6 +355,7 @@ async fn refresh_certificate(
     storage: Option<(Storage, String)>,
     mut shutdown: watch::Receiver<bool>,
     events: broadcast::Sender<Event>,
+    key_exchange_groups: Vec<crate::KeyExchangeGroup>,
 ) {
     let mut first = true;
     loop {
@@ -364,7 +396,7 @@ async fn refresh_certificate(
             certificate_expiry: expiry.clone(),
             ..identity.clone()
         };
-        match self::acceptor(&renewed) {
+        match self::acceptor(&renewed, &key_exchange_groups) {
             Ok(next) => *acceptor.write().expect("acceptor lock") = next,
             Err(error) => {
                 warn!(%error, "ignoring renewed certificate that does not match the key");
@@ -391,11 +423,30 @@ fn renewal_due(expiry: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::crypto_provider;
+
     #[test]
     fn renewal_due() {
         assert!(!super::renewal_due("2099-01-04T23:59:59.000Z"));
         assert!(super::renewal_due("2020-01-04T23:59:59.000Z"));
         assert!(super::renewal_due("not a date"));
+    }
+
+    #[test]
+    fn crypto_provider_keeps_the_requested_group_order() {
+        let groups = [
+            rustls::NamedGroup::X25519MLKEM768,
+            rustls::NamedGroup::X25519,
+        ];
+        let provider = crypto_provider(&groups).expect("AWS-LC supports the requested groups");
+        assert_eq!(
+            provider
+                .kx_groups
+                .iter()
+                .map(|group| group.name())
+                .collect::<Vec<_>>(),
+            groups
+        );
     }
 }
 

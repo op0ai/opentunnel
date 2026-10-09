@@ -161,6 +161,7 @@ fn connect(base: &str, identity: &Identity, routes: Routes) -> (Tunnel, Storage)
     let client = Client::new(ClientOptions {
         api: Some(base.parse().unwrap()),
         storage: Some(storage.clone()),
+        key_exchange_groups: None,
     });
     (client.connect("default", routes).unwrap(), storage)
 }
@@ -183,6 +184,7 @@ async fn connects_with_a_caller_owned_identity_without_profile_io() {
     let client = Client::new(ClientOptions {
         api: Some(base.parse().unwrap()),
         storage: Some(storage),
+        key_exchange_groups: None,
     });
     let tunnel = client
         .connect_identity(identity(), [("api".into(), "127.0.0.1:9".into())].into())

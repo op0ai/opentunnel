@@ -24,6 +24,7 @@ mod tunnel;
 pub use client::{Client, ClientOptions, ProvisionStage};
 pub use error::{Error, Result};
 pub use identity::{Identity, PendingIdentity};
+pub use rustls::NamedGroup as KeyExchangeGroup;
 pub mod protocol;
 pub use storage::Storage;
 pub use tunnel::{Event, Routes, State, Status, Tunnel};
