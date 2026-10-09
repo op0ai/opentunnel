@@ -1,0 +1,43 @@
+crates/opentunnel/Cargo.toml
+  s_481c17fb7ecbd2::t_dfd0dfd537aea5 17,23
+crates/opentunnel/src/client.rs
+  s_481c17fb7ecbd2::t_dfd0dfd537aea5 33-35,43,57-59,63,191,198-204,295-304
+  s_04150719d0cc2d::t_7958473e049269 305
+crates/opentunnel/src/lib.rs
+  s_481c17fb7ecbd2::t_dfd0dfd537aea5 27
+crates/opentunnel/src/tunnel.rs
+  s_481c17fb7ecbd2::t_dfd0dfd537aea5 127,132,152,287-290,298-299,308-334,358,399,450
+  s_481c17fb7ecbd2::t_4a887c95144bcc 426-427,434-449
+  s_481c17fb7ecbd2::t_614f1bbfcc0b23 300-304
+crates/opentunnel-cli/src/main.rs
+  s_481c17fb7ecbd2::t_dfd0dfd537aea5 115
+crates/opentunnel/tests/tunnel.rs
+  s_481c17fb7ecbd2::t_dfd0dfd537aea5 187
+  s_481c17fb7ecbd2::t_a370d8246ca2c2 164
+Cargo.lock
+  s_481c17fb7ecbd2::t_8cc83f038f1a1a 121-143,193-194,255-263,368-373,411-416,824-833,1043-1048,1211,1275
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fdfc86aa813d4eb7ee2be5e6db0cc9279fdc40b1",
+  "prompts": {},
+  "sessions": {
+    "s_04150719d0cc2d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12254-083e-7e63-b8ec-d835323bc9c4",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Arth Tyagi <onarth@icloud.com>"
+    },
+    "s_481c17fb7ecbd2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1227c-a37f-7013-b535-917b8f42c484",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Arth Tyagi <onarth@icloud.com>"
+    }
+  }
+}
