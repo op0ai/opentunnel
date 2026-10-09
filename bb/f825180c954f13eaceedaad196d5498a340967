@@ -1,0 +1,38 @@
+crates/opentunnel/tests/tunnel.rs
+  s_481c17fb7ecbd2::t_71116f047c0e57 7,198-208
+  s_481c17fb7ecbd2::t_22c8b77a12c17a 197
+  s_481c17fb7ecbd2::t_127663c0c01ff0 209-210
+crates/opentunnel/src/client.rs
+  s_481c17fb7ecbd2::t_bff088c463eae5 192-206
+  s_971633958700ba::t_8cfb024e48ec0d 207-208
+crates/opentunnel/src/error.rs
+  s_481c17fb7ecbd2::t_154e76fe24b846 4,36-41
+crates/opentunnel/src/tunnel.rs
+  s_481c17fb7ecbd2::t_1dc819aa6afd18 344-347,817-822,824
+  s_481c17fb7ecbd2::t_8011d720a4d876 47-48,116,144,167,195,197,206-263,342-343
+  s_481c17fb7ecbd2::t_8157ba84998eb6 269,341,840,855-856
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bbf825180c954f13eaceedaad196d5498a340967",
+  "prompts": {},
+  "sessions": {
+    "s_481c17fb7ecbd2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1227c-a37f-7013-b535-917b8f42c484",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Arth Tyagi <onarth@icloud.com>"
+    },
+    "s_971633958700ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12285-e214-7ba1-9962-dbf1d8cb14b4",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Arth Tyagi <onarth@icloud.com>"
+    }
+  }
+}
