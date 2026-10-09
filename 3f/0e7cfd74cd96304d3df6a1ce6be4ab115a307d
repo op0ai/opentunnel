@@ -1,0 +1,21 @@
+crates/opentunnel/src/client.rs
+  s_481c17fb7ecbd2::t_b38e005944cac6 186-191
+crates/opentunnel/tests/tunnel.rs
+  s_481c17fb7ecbd2::t_4e2269fee20211 174-196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3f0e7cfd74cd96304d3df6a1ce6be4ab115a307d",
+  "prompts": {},
+  "sessions": {
+    "s_481c17fb7ecbd2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1227c-a37f-7013-b535-917b8f42c484",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Arth Tyagi <onarth@icloud.com>"
+    }
+  }
+}
