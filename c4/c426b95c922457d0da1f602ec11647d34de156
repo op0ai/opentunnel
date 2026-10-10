@@ -1,0 +1,19 @@
+crates/opentunnel/Cargo.toml
+  s_760946444ace10::t_27d02caed32748 28-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c4c426b95c922457d0da1f602ec11647d34de156",
+  "prompts": {},
+  "sessions": {
+    "s_760946444ace10": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "623037f2-7159-4c66-851c-c6390e29e949",
+        "model": "unknown"
+      },
+      "human_author": "Arth Tyagi <onarth@icloud.com>"
+    }
+  }
+}
