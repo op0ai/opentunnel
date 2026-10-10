@@ -13,7 +13,6 @@ futures-util = "0.3.34"
 humantime = "2.4.0"
 rand = "0.10.3"
 rcgen = { version = "0.14.10", default-features = false, features = ["ring", "pem"] }
-reqwest = { version = "0.13.5", default-features = false, features = ["http2", "json", "rustls-no-provider"] }
 rustls = { version = "0.23.45", default-features = false, features = ["aws_lc_rs", "ring", "std", "tls12", "logging"] }
 rustls-pki-types = { version = "1.15.1", features = ["std"] }
 serde = { version = "1.0.229", features = ["derive"] }
@@ -25,6 +24,13 @@ tokio-tungstenite = { version = "0.30.0", features = ["rustls-tls-webpki-roots"]
 toml = "1.1.6"
 tracing = "0.1.44"
 webpki-root-certs = "1.0.9"
+
+# The certificate API is a native HTTP client. Reqwest's wasm32 target
+# pulls js-sys and wasm-bindgen-futures. Those crates must match one
+# wasm-bindgen release. Keep them out of this crate so a workspace can
+# pin an older wasm-bindgen for its own wasm build.
+[target.'cfg(not(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none"))))'.dependencies]
+reqwest = { version = "0.13.5", default-features = false, features = ["http2", "json", "rustls-no-provider"] }
 
 [dev-dependencies]
 hex = "0.4.3"
